@@ -21,6 +21,7 @@ For this lab (due Tuesday Feb 24th at 8:30am EST) we will be working with a new 
 ### **Setup packages:**
 
 ```{r}
+library(tidyverse)
 library(dplyr)
 library(ggplot2)
 library(tidytext)
