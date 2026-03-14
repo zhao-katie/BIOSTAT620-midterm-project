@@ -1,0 +1,709 @@
+---
+title: "Analysis of the Vaccination Coverage of US Women (18+) with Recent Live Birth between 2012 and 2022"
+subtitle: "Biostat 620 Midterm Project, Winter 2026"
+author: "Katie Zhao"
+format: html
+editor: visual
+embed-resources: true
+line-height: 2
+toc: TRUE
+---
+
+# Introduction:
+
+The importance of vaccines, in preventing the spread of infectious diseases across communities and geographic boundaries, cannot be overstated. While there are broad efforts in the United States to increase vaccination rates across all demographics (age, race, gender, economic status, etc), past literature has underscored the importance of vaccinations for women before, during, and after pregnancy:
+
+-   [**From the Centers for Disease Control and Prevention (CDC):**](https://www.cdc.gov/vaccine-safety/about/pregnancy.html) "*The antibodies mothers develop in response to these vaccines not only protect them, but also cross the placenta and help protect their babies from serious diseases early in life. Vaccinating during pregnancy also helps protect a mother from getting a serious disease and then giving it to her newborn."*
+
+Two commonly recommended vaccines for women to receive during/around pregnancy are Influenza and Tdap.
+
+-   **Influenza:** A vaccine with a recommended yearly administration during the fall season for everyone 6 months and older. New influenza vaccines are developed annually to protect against new influenza/flu strains.
+
+-   **Tdap:** A combination vaccine to protect against tetanus, diphtheria, and pertussis for everyone 7 years and older. A booster is recommended every 10 years, and during women's third trimester of pregnancy (regardless of when their last vaccination was).
+
+The [**Pregnancy Risk Assessment Monitoring System (PRAMS)**](https://www.cdc.gov/prams/about/index.html) was established in 1987 with a goal of reducing infant morbidity and mortality in the United States (US). PRAMS is a public health surveillance system that monitors the health status of women and infants and subsequently works to influence maternal behaviors before, during, and immediately after live birth.
+
+One of PRAMS' initiatives is to study the vaccination coverage among pregnant women. A recent [dataset](https://data.cdc.gov/Pregnancy-Vaccination/Vaccination-Coverage-among-Pregnant-Women/h7pm-wmjc/about_data) from PRAMS sampled US women 18 years and older who had a recent live birth between 2012 and 2022 to aggregate information on vaccine coverage at the state and national level by age and race/ethnicity.
+
+The primary goal of this analysis is to study how vaccination coverage for Influenza and Tdap has changed among US women 18 years and older with recent live births between 2012 and 2022. Secondary analysis will also examine whether vaccination coverage differ by age and race/ethnicity groups during this ten-year time frame.
+
+# Data Preparation:
+
+```{r, message = FALSE, echo = FALSE}
+library(tidyverse)
+library(knitr)
+```
+
+```{r, message = FALSE, echo = FALSE}
+vax <- read.csv("Vaccination_Coverage_among_Pregnant_Women_20260228.csv")
+
+# Renaming Columns:
+colnames(vax) <- c("Vaccine", "Geography_Type", "Geography", "Year",
+                           "Dimension_Type", "Dimension", "Percent", 
+                           "CI_95", "Sample_Size")
+# Formatting vax
+vax <- vax %>% 
+  mutate(Percent = suppressWarnings(as.numeric(Percent)),
+         Year = factor(Year),
+         Dimension = case_when(
+           Dimension == "White, Non-Hispanic" ~ "White",
+           Dimension == "Other or Multiple Races, Non-Hispanic" ~ 
+             "Other or Multiple Races",
+           Dimension == "Black, Non-Hispanic" ~ "Black",
+           Dimension == "Hispanic" ~ "Hispanic",
+           TRUE ~ Dimension))
+
+# State Data:
+vax_states <- vax %>% 
+  filter(Geography_Type == "States") %>% 
+  select(-Geography_Type) %>% 
+  rename(State = Geography) %>% 
+  filter(State != "NY-City of New York",
+         State != "NY-Rest of state",
+         State != "Commonwealth of the Northern Mariana Islands",
+         State != "District of Columbia")
+
+# US Data:
+vax_US <- vax %>% 
+  filter(Geography_Type == "National") %>% 
+  select(-Geography_Type, -Geography)
+
+# State Age Data
+vax_states_age <- vax_states %>% 
+  filter(Dimension_Type == "Age") %>% 
+  select(-Dimension_Type) %>% 
+  rename(Age = Dimension) %>% 
+  arrange(Vaccine, State, Year)
+
+# State Race Data
+vax_states_race <- vax_states %>% 
+  filter(Dimension_Type == "Race and Ethnicity") %>% 
+  select(-Dimension_Type) %>% 
+  rename(Race = Dimension) %>% 
+  mutate(Race = factor(Race,
+                      levels = c("White", "Black", "Hispanic", 
+                                 "Other or Multiple Races"))) %>% 
+  arrange(Vaccine, State, Year)
+
+# US Age Data
+vax_US_age <- vax_US %>% 
+  filter(Dimension_Type == "Age") %>% 
+  select(-Dimension_Type) %>% 
+  rename(Age = Dimension) %>% 
+  mutate(Age = factor(Age, 
+                         levels = c(">=18 Years", "18-24 Years", 
+                                    "25-34 Years", ">=35 Years")),
+         Year = factor(Year)) %>% 
+  arrange(Vaccine, Year)
+
+# US Race Data
+vax_US_race <- vax_US %>% 
+  filter(Dimension_Type == "Race and Ethnicity") %>% 
+  select(-Dimension_Type) %>% 
+  rename(Race = Dimension) %>% 
+  mutate(Race = factor(Race,
+                      levels = c("White", "Black", "Hispanic", 
+                                 "Other or Multiple Races"))) %>% 
+  arrange(Vaccine, Year)
+```
+
+The dataset used in this analysis was exported from the [CDC's online database](https://data.cdc.gov/Pregnancy-Vaccination/Vaccination-Coverage-among-Pregnant-Women/h7pm-wmjc/about_data), collected as part of a PRAMS initiative to survey the vaccine coverage of US women of 18 years of age and older with recent live birth between 2012 and 2022.
+
+```{r, message = FALSE, echo = FALSE}
+rownames(vax) <- NULL
+vax[c(1, 2, 67, 68, 3915),] %>%
+  as_tibble() %>% 
+  knitr::kable(caption = "Preview of Raw PRAMs Dataset")
+```
+
+This dataset was structured with two "unusual" variables: `Geography_Type` (captures whether the data was collected at the state/national level), and `Dimension_Type` (denotes whether the percent estimate captures age or race data).
+
+Thus, in order to have "tidy" data—such that each variable is a column, each row corresponds to one observation, and each value is a cell—it was necessary to separate this data set into four separate tidy datasets.
+
+1.  The vaccination coverage of US women (18+) with recent live birth at the state level, per age group.
+2.  The vaccination coverage of US women (18+) with recent live birth at the state level, per race group.
+3.  The vaccination coverage of US women (18+) with recent live birth at the national level, per age group.
+4.  The vaccination coverage of US women (18+) with recent live birth at the national level, per race group.
+
+To create these datasets, the PRAMs data were filtered by whether they captured state or national vaccine coverage data. The following `Geography` (state) designations, *NY-City of New York, NY-Rest of state, Commonwealth of the Northern Mariana Islands, and District of Columbia*, were removed from the data.
+
+Among both the state and national vaccine coverage data, two subset datasets were then created that filtered either age/race data (creating four nested datasets in total). Then, the `Dimension` variable was renamed to reflect whether it captured age or race data.
+
+```{r, message = FALSE, echo = FALSE}
+rownames(vax_states_age) <- NULL
+vax_states_age[c(1, 2, 1478, 1477),] %>%
+  as_tibble() %>% 
+  knitr::kable(caption = "Preview of Dataset #1: Vaccination Coverage of US Women (18+) with Recent Live Births at the State Level, per Age Group")
+
+rownames(vax_US_race) <- NULL
+vax_US_race[c(1, 2, 47, 48),] %>%
+  as_tibble() %>% 
+  knitr::kable(caption = "Preview of Dataset #4: Vaccination Coverage of US Women (18+) with Recent Live Births at the National Level, per Race Group")
+```
+
+# Exploratory Analysis:
+
+The variables of interest\* in this analysis were Vaccine Type, State, Year, Age/Race Group, and Percent Coverage (at the state and national level).
+
+-   **`Vaccine`:** Categorical \[Influenza or Tdap\]
+
+-   **`State`:** Categorical \[states among the 50 states in the United States\]
+
+-   **`Year`:** Dates \[2012 - 2022\]
+
+-   **`Age`:** Categorical \[\>=18 Years, 18-24 Years, 25-34 Years, \>=35 Years\]
+
+-   **`Race`:** Categorical \[White, Black, Hispanic, Other or Multiple Races\]
+
+-   **`Percent`:** Continuous (0, 100)
+
+This exploratory analysis begins by first examining the sampling patterns of US states in the data.
+
+```{r, message = FALSE, echo = FALSE}
+############## USING STATE DATA #################
+# Number of States with Data (per vaccine, per race/age data)
+
+## Influenza + Age
+vax_states_age %>% 
+  filter(Vaccine == "Influenza",
+         Age != ">=18 Years") %>% 
+  group_by(Age, Year) %>% 
+  summarize(count = length(unique(State))) %>% 
+  pivot_wider(names_from = Year, values_from = count) %>% 
+  knitr::kable(caption = "Table A: Number of States with Collected Influenza Coverage Data for US Women (18+) with Recent Live Births, Per Age Range and Year")
+
+## TDAP + Age
+vax_states_age %>% 
+  filter(Vaccine == "Tdap",
+         Age != ">=18 Years") %>% 
+  group_by(Age, Year) %>% 
+  summarize(count = length(unique(State))) %>% 
+  pivot_wider(names_from = Year, values_from = count) %>% 
+  knitr::kable(caption = "Table B: Number of States with Collected Tdap Coverage Data for US Women (18+) with Recent Live Births, Per Age Range and Year")
+```
+
+Tables A & B clearly show that in every year between 2012 and 2022, vaccine coverage data of US women (18+) with recent live births for Influenza and Tdap per age group was *not captured* in *every* US state (50 states in total).
+
+Of note, there is consistency between years: for both vaccines, the same number of states had data for each age group. However, there were is a greater number of states with coverage data per age group for the Influenza vaccine compared to the Tdap vaccine.
+
+Additionally, there was trend between both vaccines where between 2012 and 2019, the number of states with vaccine coverage data per age group generally increased, and then those numbers decreased between 2020 and 2022.
+
+```{r, message = FALSE, echo = FALSE}
+##############################################################################
+# Number of States with Data (per vaccine, per race/age data)
+
+## Influenza + Race
+vax_states_race %>% 
+  filter(Vaccine == "Influenza") %>% 
+  group_by(Race, Year) %>% 
+  summarize(count = length(unique(State))) %>% 
+  pivot_wider(names_from = Year, values_from = count) %>% 
+  knitr::kable(caption = "Table C: Number of States with Collected Influenza Coverage Data for US Women (18+) with Recent Live Births, Per Race Group and Year")
+
+# State with no Influenza Black / Hispanic data??? Answer: WASHINGTON (12-14), VIRGINIA (15-)
+
+# no_data <- c()
+# for (year in c(2012:2022)){
+#   state_influenza_white <- vax_states_race %>% 
+#   filter(Vaccine == "Influenza", Year == year, Race == "White") %>% 
+#   pull(State) %>% unique()
+#   
+#   state_influenza_black <- vax_states_race %>% 
+#   filter(Vaccine == "Influenza", Year == year, Race == "Black") %>% 
+#   pull(State) %>% unique()
+#   
+#   no_data <- append(no_data, 
+#                     state_influenza_black[!c(state_influenza_white %in% state_influenza_black)])
+# }
+# no_data
+  
+
+## TDAP + Race
+vax_states_race %>% 
+  filter(Vaccine == "Tdap") %>% 
+  group_by(Race, Year) %>% 
+  summarize(count = length(unique(State))) %>% 
+  pivot_wider(names_from = Year, values_from = count) %>% 
+  knitr::kable(caption = "Table D: Number of States with Collected Tdap Coverage Data for US Women (18+) with Recent Live Births, Per Race Group and Year")
+
+# State with no Tdap Black / Hispanic data beyond 2016??? Answer: VIRGINIA
+
+# no_data1 <- c()
+# for (year in c(2012:2022)) {
+#   state_tdap_white <- vax_states_race %>% 
+#   filter(Vaccine == "Tdap", Year == year, Race == "White") %>% 
+#   pull(State) %>% unique()
+#   
+#   state_tdap_black <- vax_states_race %>% 
+#   filter(Vaccine == "Tdap", Year == year, Race == "Black") %>% 
+#   pull(State) %>% unique()
+#   
+#   no_data1 <- append(no_data1, state_tdap_black[!c(state_tdap_white %in% state_tdap_black)])
+# }
+# no_data1
+```
+
+Tables C & D, which now display the number of states with collected vaccine coverage data for US women (18+) with recent live births of *race groups* per year, show similar trends to Figures A & B.
+
+In every year between 2012 and 2022, vaccine coverage data for Influenza and Tdap per race group was *not captured* in *every* US state (50 states in total). There were also more states with coverage data for Influenza compared to Tdap, and the number of states with coverage data generally peaked around 2019 and decreases after.
+
+Interestingly, unlike Tables A & B (which cover the age attribute), Tables C & D show years where the number of states with coverage data was not the same for each race group. Furthermore, the race groups missing state data were consistently Black and Hispanic groups. Further analysis reveals that for Influenza, Washington was the state with incomplete race data between 2012 and 2014, while from 2015 onward the state with incomplete data is Virginia. For Tdap, the state with incoplete data for Black and Hispanic groups from 2016 and onward was Virginia.
+
+```{r, message = FALSE, echo = FALSE}
+######## States with No Coverage Data (per vaccine, per race/age group) ####
+
+us_states <- map_data("state") %>% 
+  mutate(State = str_to_title(region)) %>% 
+  select(-subregion, -region) %>% 
+  pull(State) %>% 
+  unique()
+us_states <- c(us_states, "Hawaii", "Alaska")[!us_states %in% c("District Of Columbia")]
+
+# States with No Influenza + Age Data
+states_no_influ_age_data <- vax_states_age %>% 
+  filter(Vaccine == "Influenza",
+         Age != ">=18 Years") %>% 
+  pull(State) %>% 
+  unique()
+
+# States with No Influenza + Race Data
+states_no_influ_race_data <- vax_states_race %>% 
+  filter(Vaccine == "Influenza") %>% 
+  pull(State) %>% 
+  unique()
+
+data.frame(
+  "Number" = c(1:length(us_states[!(us_states %in% states_no_influ_age_data)])),
+  "Age_Attribute" = us_states[!(us_states %in% states_no_influ_age_data)],
+  "Race_Attribute" = us_states[!(us_states %in% states_no_influ_race_data)]
+  ) %>% 
+  knitr::kable(caption = "Table E: States with No Influenza Coverage Data between 2012-2022 for US Women (18+) with Recent Live Births, Per Attribute")
+
+# States with No Tdap + Age Data
+states_no_tdap_age_data <- vax_states_age %>% 
+  filter(Vaccine == "Tdap",
+         Age != ">=18 Years") %>% 
+  pull(State) %>% 
+  unique()
+
+# States with No Tdap + Age Data
+states_no_tdap_race_data <- vax_states_race %>% 
+  filter(Vaccine == "Tdap") %>% 
+  pull(State) %>% 
+  unique()
+
+data.frame(
+  "Number" = c(1:length(us_states[!(us_states %in% states_no_tdap_age_data)])),
+  "Age_Attribute" = us_states[!(us_states %in% states_no_tdap_age_data)],
+  "Race_Attribute" = us_states[!(us_states %in% states_no_tdap_race_data)]
+  ) %>% 
+  knitr::kable(caption = "Table F: States with No Tdap Coverage Data between 2012-2022 for US Women (18+) with Recent Live Births, Per Attribute")
+
+```
+
+For completeness, lists were complied for the states without vaccine coverage for US women (18+) with recent live births, per vaccine and per age/race attribute, in *every year* between 2012 and 2022.
+
+There was consistency of which states were missing age/race attribute per vaccine, and as expected, there were more states (20) missing Tdap attribute data compared to Influenza.
+
+Thus, given that the state-level coverage data varies year-to-year and there are states entirely missing data, it was decided that this analysis would focus on the general US-level coverage data (aggregated from state level sampling).
+
+```{r, echo = FALSE}
+############ USING US DATA ###############
+
+# Distribution of US Proportions (per vaccine, per race/age data)
+
+vax_US_age %>% # Dist. of Age Percents regardless of Year
+  filter(Age != ">=18 Years") %>% 
+  ggplot(aes(x = Age, y = Percent, fill = Age)) +
+  geom_violin() +
+  scale_fill_manual(name = "Age Group", values = c("#4682B4", "#AF46B4", 
+                                                       "#4BB446")) +
+  theme_bw() +
+  facet_wrap(~Vaccine) +
+  labs(title = "Figure A: Distribution of Vaccine 2012-2022 Coverage Data for\nUS Women (18+) with Recent Live Births, per Age Group",
+       y = "Percent Coverage (%)")
+
+vax_US_age %>% # Dist. of Age Percents regardless of Age
+  filter(Age != ">=18 Years") %>% 
+  ggplot(aes(x = Year, y = Percent, fill = Year)) +
+  geom_violin() +
+  theme_bw() +
+  scale_x_discrete(breaks = c(2012, 2014, 2016, 2018,
+                              2020, 2022)) +
+  facet_wrap(~Vaccine) +
+  labs(title = "Figure B: Distribution of Age Group Vaccine Coverage Data for\nUS Women (18+) with Recent Live Births, per Year",
+       y = "Percent Coverage (%)")
+
+```
+
+Figure A illustrates the marginal distribution of US 2012-2022 vaccine coverage of US women (18+) with recent live births for Influenza and Tdap per age group (without stratifying by year). For the Influenza data, a pattern emerged: as age group increased, vaccine coverage also appeared to increase (minimum, median, and median) values. A pattern was less clear for Tdap data; the distributions were overall very similar between age groups—however, it is noteworthy that the ranges of Tdap coverage per age group were way larger than those for Influenza coverage.
+
+Figure B illustrates the marginal distribution of US 2012-2022 age group vaccine coverage for Influenza and Tdap per year (without stratifying by age group). The Influenza coverage distributions were overall "contained" between 40-65%; the medians did not vary greatly between years. On the other hand, there was a clear pattern with Tdap data: as the year increased, so did Tdap coverage—then, around 2020, the coverage plateaued. Of note, the ranges of the Tdap coverage per year were smaller than those for Influenza coverage.
+
+```{r, echo = FALSE}
+
+vax_US_race %>% # Dist. of Race Percents regardless of Year
+  ggplot(aes(x = Race, y = Percent, fill = Race)) +
+  geom_violin() +
+  scale_fill_manual(name = "Race",
+                     values = c("#4682B4", "#AF46B4","#B47846","#4BB446")) +
+  theme_bw() +
+  scale_x_discrete(labels = c("White", "Black", "Hispanic", "Other")) +
+  facet_wrap(~Vaccine) + 
+  labs(title = "Figure C: Distribution of Vaccine 2012-2022 Coverage Data for\nUS Women (18+) with Recent Live Births, per Race Group",
+       y = "Percent Coverage (%)")
+
+vax_US_race %>% # Dist. of Race Percents regardless of Age
+  ggplot(aes(x = Year, y = Percent, fill = Year)) +
+  geom_violin() +
+  theme_bw() +
+  scale_x_discrete(breaks = c(2012, 2014, 2016, 2018,
+                              2020, 2022)) +
+  facet_wrap(~Vaccine) +
+  labs(title = "Figure D: Distribution of US Race Group Vaccine Coverage Data\nfor US Women (18+) with Recent Live Births, per Year",
+       y = "Percent Coverage (%)")
+
+```
+
+Figure C illustrates the marginal distribution of US 2012-2022 vaccine coverage data of US women (18+) with recent live births for Influenza and Tdap per race group (without stratifying by year). For Influenza, the coverage for the Black race group was noticeably lower than the other race groups (minimum, median, and maximum). The distributions of Tdap data per race group were pretty similar (though the maximum coverage for the Black race group was lower than the maximum coverage for the other race groups). The ranges of Tdap coverage per race group were significantly larger than those for Influenza coverage.
+
+Figure D illustrates the marginal distribution of US 2012-2022 race group vaccine coverage of US women (18+) with recent live births for Influenza and Tdap per year (without stratifying by race group). The Influenza coverage distributions were overall "contained" between 35-70%; the medians did not vary greatly between years. On the other hand, there was again a clear pattern with Tdap data: as the year increased, so did Tdap coverage—then, around 2020, the coverage plateaued. Furthermore, the ranges of the Tdap coverage per year were generally smaller than those for Influenza coverage.
+
+The last set of exploratory analyses conducted examined the minimum/maximum coverage per vaccine, per age/race attribute, as well as the years associated with these values.
+
+```{r, echo = FALSE}
+
+# min/max for age groups
+vax_US_age %>% 
+  filter(Vaccine == "Influenza",
+         Age != ">=18 Years") %>% 
+  group_by(Age) %>% 
+  summarize(Minimum = min(Percent),
+            Minimum_Year = Year[which.min(Percent)],
+            Maximum = max(Percent),
+            Maximum_Year = Year[which.max(Percent)]
+  ) %>% 
+  knitr::kable(caption = "Table G: Minimum and Maximum Percent Coverage of Influenza for US Women (18+) with Recent Live Births between 2012-2022, by Age Group")
+
+vax_US_age %>% 
+  filter(Vaccine == "Tdap",
+         Age != ">=18 Years") %>% 
+  group_by(Age) %>% 
+  summarize(Minimum = min(Percent),
+            Minimum_Year = Year[which.min(Percent)],
+            Maximum = max(Percent),
+            Maximum_Year = Year[which.max(Percent)]
+  ) %>% 
+  knitr::kable(caption = "Table H: Minimum and Maximum Percent Coverage of Tdap for US Women (18+) with Recent Live Births between 2012-2022, by Age Group")
+```
+
+Tables H and G both show some agreement—the minimum percent coverage of Influenza and Tdap among US women (18+) with recent live births in every age group occurred in 2012. The minimum percent coverages of Tdap per age group in 2012 were all lower than their Influenza counterparts.
+
+Table H shows the the maximum percent coverage of Influenza for the 18-24 age group (52.5%) occured in 2016—earlier than the other two age groups, and was a lower maximum. Table G shows the maximum percent coverage of Tdap for the 18-24 age group (76.7) was also lower than the other age groups.
+
+The maximum percent coverages of Tdap per age group were all higher than their Influenza counterparts.
+
+```{r, echo = FALSE}
+# min / max for
+
+vax_US_race %>% 
+  filter(Vaccine == "Influenza") %>% 
+  group_by(Race) %>% 
+  summarize(Minimum = min(Percent),
+            Minimum_Year = Year[which.min(Percent)],
+            Maximum = max(Percent),
+            Maximum_Year = Year[which.max(Percent)]
+  ) %>% 
+  knitr::kable(caption = "Table I: Minimum and Maximum Percent Coverage of Influenza for US Women (18+) with Recent Live Births between 2012-2022, by Race Group")
+
+vax_US_race %>% 
+  filter(Vaccine == "Tdap") %>% 
+  group_by(Race) %>% 
+  summarize(Minimum = min(Percent),
+            Minimum_Year = Year[which.min(Percent)],
+            Maximum = max(Percent),
+            Maximum_Year = Year[which.max(Percent)]
+  ) %>% 
+  knitr::kable(caption = "Table J: Minimum and Maximum Percent Coverage of Tdap for US Women (18+) with Recent Live Births between 2012-2022, by Race Group")
+```
+
+Similarly, Tables I and J both show some agreement—the minimum percent coverage of Influenza and Tdap among US women (18+) with recent live births in every race group occurred in 2012. The minimum percent coverages of Tdap per age group in 2012 were all lower than their Influenza counterparts.
+
+Table I shows the maximum percent coverage of Influenza for Black and Hispanic race group (50.4% and 61.4%) occurred in 2016—earlier than the other White and Other race groups (65.5% and 70.0% in 2020), and were lower maximums. Table J shows the maximum percent coverage of Tdap for the Black race group (70.7%) was lower than the other race groups.
+
+The maximum percent coverages of Tdap per race group were all higher than their Influenza counterparts.
+
+Though the analysis does primarily focus on US national-level data to study the vaccine coverage of US women (18+) with recent live births, it would be remiss to not acknowledge the *state data* that was used to aggregate the national-level data.
+
+```{r, echo = FALSE}
+vax_states_age %>% 
+  filter(Age == ">=18 Years",
+         Vaccine == "Influenza") %>% 
+  group_by(Year) %>% 
+  summarize(Minimum_Percent = min(Percent),
+            Median_Percent = median(Percent),
+            Maximum_Percent = max(Percent)) %>% 
+  knitr::kable(caption = "Table K: Distribution of US State-Level Influenza Coverage Data for Women (18+) with Recent Live Births between 2012-2022")
+
+vax_states_age %>% 
+  filter(Age == ">=18 Years",
+         Vaccine == "Tdap") %>% 
+  group_by(Year) %>% 
+  summarize(Minimum_Percent = min(Percent),
+            Median_Percent = median(Percent),
+            Maximum_Percent = max(Percent)) %>% 
+  knitr::kable(caption = "Table L: Distribution of US State-Level Tdap Coverage Data for Women (18+) with Recent Live Births between 2012-2022")
+```
+
+Table K, which displays the distribution of US state-level Influenza coverage data for US women (18+) with recent live births, illustrates the common pattern seen through the other exploratory analysis: the distributions (minimum, median, maximum) of the state coverage data were relatively similar in all years captured in the sampling.
+
+Table L, which displays the distribution of US state-level Tdap coverage data for US women (18+) with recent live births, also illustrates similar findings seen earlier in the exploratory analysis: the distributions (minimum, median, maximum) of the state coverage data increased from 2012 to 2022.
+
+*\*Confidence Interval and Sample Size data were not included in this analysis, as only descriptive statistics and visualizations were used to analyze the data (no statistical tests were conducted).*
+
+# Preliminary Results:
+
+### [Primary Analysis:]{.underline} 
+
+```{r, echo = FALSE}
+# Influenza (>=18)
+trial <- vax_states_age %>% 
+  filter(Vaccine == "Influenza", Age == ">=18 Years", 
+         Year %in% c(2012, 2014, 2016, 2018, 2020, 2022))
+
+us_map <- map_data("state") %>% 
+  mutate(State = str_to_title(region)) %>% 
+  select(-subregion, -region)
+  
+trial1 <- left_join(trial, us_map, by = c("State"),
+                     relationship = "many-to-many")
+
+trial1 %>% 
+  ggplot() +
+    geom_polygon(us_map, mapping = aes(x = long, y = lat, group = group),
+               fill = "white",
+               color = "black") +
+  geom_polygon(aes(x = long, y = lat, group = group, fill = Percent),
+               color = "black") +
+  scale_fill_gradientn(name = "Percent\nCoverage\nper State (%)", 
+                      colors = c("#DE2D26", "#FC9272", "#006400"), 
+                      limits = c(0, 100),
+                      labels = c("", 25, 50, 75, "")) +
+  theme_classic() +
+  theme(aspect.ratio = 0.9,
+        axis.title.x = element_blank(),
+        axis.text.x = element_blank(),
+        axis.ticks.x = element_blank(),
+        axis.line.x = element_blank(),
+        axis.title.y = element_blank(),
+        axis.text.y = element_blank(),
+        axis.ticks.y = element_blank(),
+        axis.line.y = element_blank(),
+        plot.margin=unit(c(0,0,0,0), "pt")) +
+  labs(title = "Figure 1a: Influenza Vaccine Coverage of US Women (18+)\nwith Recent Live Births, between 2012-2022") +
+  facet_wrap(~Year)
+```
+
+```{r, echo = FALSE}
+# Tdap (>=18)
+trial <- vax_states_age %>% 
+  filter(Vaccine == "Tdap", Age == ">=18 Years", 
+         Year %in% c(2012, 2014, 2016, 2018, 2020, 2022))
+  
+trial1 <- left_join(trial, us_map, by = c("State"),
+                     relationship = "many-to-many")
+
+trial1 %>% 
+  ggplot() +
+    geom_polygon(us_map, mapping = aes(x = long, y = lat, group = group),
+               fill = "white",
+               color = "black") +
+  geom_polygon(aes(x = long, y = lat, group = group, fill = Percent),
+               color = "black") +
+  scale_fill_gradientn(name = "Percent\nCoverage\nper State (%)", 
+                      colors = c("#DE2D26", "#FC9272", "#006400"),
+                      limits = c(0, 100),
+                      labels = c("", 25, 50, 75, "")) +
+  theme_classic() +
+  theme(aspect.ratio = 0.9,
+        axis.title.x = element_blank(),
+        axis.text.x = element_blank(),
+        axis.ticks.x = element_blank(),
+        axis.line.x = element_blank(),
+        axis.title.y = element_blank(),
+        axis.text.y = element_blank(),
+        axis.ticks.y = element_blank(),
+        axis.line.y = element_blank(),
+        plot.margin=unit(c(0,0,0,0), "pt")) +
+  labs(title = "Figure 1b: Tdap Vaccine Coverage of US Women (18+)\nwith Recent Live Births, between 2012-2022") +
+  facet_wrap(~Year)
+```
+
+Figures 1a and 1b start to help answer the primary question of this analysis: How has vaccination coverage for Influenza and Tdap changed among US women 18 years of age and older with recent live births between 2012 and 2022?
+
+Though state-level coverage was not the "primary" source of data in this analysis, these US-maps shading states over time by percent vaccine coverage begin to illuminate useful patterns.
+
+Figure 1a reveals that there appears to be a general increase in Influenza coverage among US women 18 years and older with recent live births between 2012 and 2020, before a general decrease is seen in 2022. The peak Influenza coverage in 2020 appears to border 50-60%.
+
+In contrast, Figure 1b reveals a more concrete trend: there is a much stronger increase in Tdap coverage among US women 18 years and older with recent live births, from 2012 to 2022 (a clear shift from red to green-filled states is seen over the time progression).
+
+Overall, Influenza coverage for this demographic appears to be initially higher than Tdap coverage in 2012, but while Tdap coverage soars through 2022, Influenza coverage generally plateaus with minimal increase.
+
+```{r, echo = FALSE}
+vax_states_age %>% 
+  filter(Vaccine == "Influenza", Age == ">=18 Years") %>% 
+  group_by(Year) %>% 
+  summarize(Mean_Coverage = round(mean(Percent), digits = 2)) %>% 
+  pivot_wider(names_from = Year, values_from = Mean_Coverage) %>% 
+  knitr::kable(caption = "Table 1a: Mean Influenza Vaccine Coverage of US Women (18+) with Recent Live Births\nbetween 2012-2022")
+
+vax_states_age %>% 
+  filter(Vaccine == "Tdap", Age == ">=18 Years") %>% 
+  group_by(Year) %>% 
+  summarize(Mean_Coverage = round(mean(Percent), digits = 2)) %>% 
+  pivot_wider(names_from = Year, values_from = Mean_Coverage) %>% 
+  knitr::kable(caption = "Table 1b: Mean Tdap Vaccine Coverage of US Women (18+) with Recent Live Births\n between 2012-2022")
+
+```
+
+Now using US-level data to summarize the mean Influenza and Tdap coverage of US Women (18+) with recent live births between 2012 and 2022, Tables 1a & 1b illustrate same pattern from Figures 1a and 1b is numerically demonstrated: Between 2012 and 2022, Influenza coverage was relatively stable with little increase, while Tdap coverage dramatically increased.
+
+### [Secondary Analysis:]{.underline}
+
+Secondary analysis will begin to examining how vaccination coverage for US women (18+) with recent live births differs by age groups between 2012 and 2022.
+
+```{r, echo = FALSE}
+vax_US_age %>% 
+  filter(Age != ">=18 Years") %>% 
+  ggplot(aes(x = Year, y = Percent, color = Age)) + 
+  geom_line(aes(group = Age),
+            linewidth = 1.5) +
+  scale_color_manual(name = "Age Group", values = c("#4682B4", "#AF46B4", 
+                                                       "#4BB446")) +
+  facet_wrap(~Vaccine) +
+  labs(x = "Year", 
+       y = "Percent Coverage (%)",
+       title = "Figure 2: Influenza and Tdap Vaccine Coverage of US Women (18+) with\nRecent Live Births per Age Group, between 2012-2022") +
+  scale_x_discrete(breaks = c(2012, 2014, 2016, 2018,
+                              2020, 2022)) +
+  theme_bw()
+```
+
+```{r, echo = FALSE}
+# % Change of Influenza coverage For different Age Groups between 2012 and 2022
+vax_US_age %>% 
+  filter(Age != ">=18 Years") %>% 
+  mutate(Year = paste("Year", Year, sep = "_")) %>%
+  filter(Vaccine == "Influenza",
+    Year %in% c("Year_2012", "Year_2022")) %>%
+  select(-CI_95, -Sample_Size) %>%
+  pivot_wider(id_cols = c("Vaccine", "Age"),
+              names_from = Year,
+              values_from = Percent) %>% 
+  group_by(Age) %>% 
+  summarize(Percent.Coverage.2012 = Year_2012,
+            Percent.Coverage.2022 = Year_2022,
+            Percent.Change = round((100*(Year_2022-Year_2012)/Year_2012), 2)) %>% 
+  knitr::kable(caption = "Table 2a: Percent Change in Influenza Vaccine Nation-Wide Coverage for US Women (18+) with Recent Live Births\nin 2012 versus 2022, by Age Group")
+```
+
+```{r, echo = FALSE}
+# % Change of TDAP coverage For different Age Groups between 2012 and 2022
+vax_US_age %>% 
+  filter(Age != ">=18 Years") %>% 
+  mutate(Year = paste("Year", Year, sep = "_")) %>%
+  filter(Vaccine == "Tdap",
+    Year %in% c("Year_2012", "Year_2022")) %>%
+  select(-CI_95, -Sample_Size) %>%
+  pivot_wider(id_cols = c("Vaccine", "Age"),
+              names_from = Year,
+              values_from = Percent) %>% 
+  group_by(Age) %>% 
+  summarize(Percent.Coverage.2012 = Year_2012,
+            Percent.Coverage.2022 = Year_2022,
+            Percent.Change = round(100*(Year_2022-Year_2012)/Year_2012, 
+                                   2)) %>% 
+  knitr::kable(caption = "Table 2b: Percent Change in Tdap Vaccine Nation-Wide Coverage for US Women (18+) with Recent Live Births\nin 2012 versus 2022, by Age Group")
+```
+
+From an overall percent coverage over time standpoint, both subplots of Figure 2 followed the coverage trends seen in Figures 1a and 1b.
+
+The Influenza subplot of Figure 2 reveals a striking trend: over all years, Influenza coverage for the 18-24 age demographic was consistently lower than the other age groups. Influenza coverage for the 35+ age group was consistently higher than the other age groups as well.
+
+Conversely, the Tdap percent coverage (seen in Figure 2) between the different age groups was relatively consistent among all age groups over the years—though coverage for the 18-24 age demographic did slightly decrease between 2019 and 2021.
+
+Tables 1a and 1b reinforce the same patterns seen between Influenza and Tdap coverage: the percent increases in Tdap coverage per age group were higher than those of Influenza coverage. The percent increase in Influenza coverage between 2012 and 2022 was 13-20% among the different age groups, while the percent increase in Tdap coverage was 368-449% among the different age groups. Additionally, for each vaccine, the 18-24 demographic consistently saw the smallest percent increase in coverage (13.32% for Influenza, 368.21% for Tdap).
+
+Finally, this analysis will conclude by examining how vaccination coverage for US women (18+) with recent live births differ by race groups between 2012 and 2022.
+
+```{r, echo = FALSE}
+vax_US_race %>% 
+  ggplot(aes(x = Year, y = Percent, color = Race)) +
+  geom_line(aes(group = Race),
+            linewidth = 1.5) +
+  scale_color_manual(name = "Race Group",
+                     values = c("#4682B4", "#AF46B4","#B47846","#4BB446")) +
+  theme_bw() +
+  scale_x_discrete(breaks = c(2012, 2014, 2016, 2018,
+                              2020, 2022)) +
+  labs(x = "Year", 
+       y = "Percent Coverage (%)",
+       title = "Figure 3: Influenza and Tdap Vaccine Coverage of US Women (18+) with\nRecent Live Births between 2012-2022, by Race") +
+  facet_wrap(~Vaccine)
+```
+
+```{r, echo = FALSE}
+# % Change of Influenza coverage For different race between 2012 and 2022
+vax_US_race %>% 
+  mutate(Year = paste("Year", Year, sep = "_")) %>% 
+  filter(Vaccine == "Influenza",
+    Year %in% c("Year_2012", "Year_2022")) %>% 
+  select(-CI_95, -Sample_Size) %>%
+  pivot_wider(id_cols = c("Vaccine", "Race"),
+              names_from = Year,
+              values_from = Percent) %>%
+  group_by(Race) %>%
+  summarize(Percent.Coverage.2012 = Year_2012,
+            Percent.Coverage.2022 = Year_2022,
+            Percent.Change = round(100*(Year_2022-Year_2012)/Year_2012,
+                                   2)) %>% 
+  knitr::kable(caption = "Table 3a: Percent Change in Influenza Vaccine Nation-Wide Coverage for US Women (18+) with Recent Live Births in 2012 versus 2022, by Race")
+```
+
+```{r, echo = FALSE}
+# % Change of TDAP coverage For different race between 2012 and 2022
+vax_US_race %>% 
+  mutate(Year = paste("Year", Year, sep = "_")) %>% 
+  filter(Vaccine == "Tdap",
+    Year %in% c("Year_2012", "Year_2022")) %>% 
+  select(-CI_95, -Sample_Size) %>%
+  pivot_wider(id_cols = c("Vaccine", "Race"),
+              names_from = Year,
+              values_from = Percent) %>%
+  group_by(Race) %>%
+  summarize(Percent.Coverage.2012 = Year_2012,
+            Percent.Coverage.2022 = Year_2022,
+            Percent.Change = round(100*(Year_2022-Year_2012)/Year_2012,
+                                   2)) %>% 
+  knitr::kable(caption = "Table 3b: Percent Change in Tdap Vaccine Nation-Wide Coverage for US Women (18+) with Recent Live Births in 2012 versus 2022, by Race")
+```
+
+The Influenza subplot of Figure 3 shows that while the general trend of Influenza coverage followed a similar "shape" among the different race groups, the coverage percents of the Black race group were significantly lower than the other race groups (which generally have similar coverage percents).
+
+The Tdap subplot of Figure 3 shows that from 2012 to 2016, the coverage percents among the different race groups were very similar and follow the same upward trend. However, while the coverage percents of White, Hispanic, and Other race groups continued to increase following 2016, the coverage percents of the Black race group plateaued.
+
+Tables 3a and 3b reinforce the same patterns seen between overall Influenza and Tdap coverage: the percent increases in Tdap coverage per race group were higher than those of Influenza coverage. The percent increase in Influenza coverage between 2012 and 2022 was 13-33% among the different race groups, while the percent increase in Tdap coverage is 285-488% among the different race groups. Of note, the smallest percent increase in Influenza coverage was seen in the White race group (13.33%) and the smallest percent increase in Tdap coverage (285.93%) was seen in the Hispanic race group.
+
+# Conclusion: 
+
+Using PRAMS data that captured the vaccination coverage trends of US women (18+) with recent live birth from 2012 to 2022, the primary objective of this analysis was to study vaccination coverage for Influenza and Tdap among this demographic during this time frame. Secondary analysis examined whether these vaccination coverage patterns differed by age and race/ethnicity groups.
+
+Overall, this analysis revealed that while percent coverage for Influenza in 2012 was generally higher for US women (18+) with recent live birth compared to Tdap coverage, Tdap coverage increased drastically more than Influenza coverage from 2012-2022. Across the board, the percent changes in Tdap coverage between 2012-2022 per age/race attribute were significantly higher than the percent changes in Influenza coverage.
+
+When stratified by age group, the 18-24 demographic of US Women (18+) with recent live birth had a lower percent coverage of Influenza during the entire ten-year span compared to the 25-34 and 35+ age groups. Tdap coverage patterns were more consistent between the age groups.
+
+When stratified by race group, the Black demographic of US Women (18+) with recent live birth had lower percent coverage of Influenza during the entire ten-year span than the White, Hispanic, and Other race groups. Tdap coverage was more consistent between the race groups—until 2016, when coverage in the Black demographic plateaued while coverage in the other race groups increased.
+
+Though not directly commented on in the preliminary findings, it is worth noting that Figures 2 and 3 show similar plateaus/decreases in vaccine coverage per age/race attribute from 2019-2020 and onward. While these could be "normal" fluctuations, it would be remiss not to mention the COVID pandemic that began in 2020, which may have disrupted vaccination patterns as human behaviors changed. An interesting future direction would be to further follow vaccination trends into the 2020s and potentially compare pre-/post-2020 vaccination coverage—especially as the topic of vaccinations has become more polarizing and politicized in the United States following COVID.
+
+A major limitation of this analysis comes from how the data were collected from sampling. As mentioned during the Exploratory Analysis section of the analysis, in no year between 2012 and 2022 was full vaccination coverage data collected in every US state for US Women (18+) with recent live birth. There were also fewer states with Tdap coverage data compared to Influenza. The national-level data used in this analysis was aggregated from the available state data. Thus, while this data can provide a general idea of vaccination trends in the US, domain insight would be required to fully ascertain whether these results could truly be generalized to all US states (and this, the country as a whole). However, Figures 1a and 1b do demonstrate that among the states with collected data (states stretching across the East/West coast and North/South, with a diverse range of political/social/cultural norms), all generally followed similar vaccination patterns over time—potentially suggesting that if sampled, other states may also have yielded similar data.
